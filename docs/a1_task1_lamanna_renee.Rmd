@@ -1,0 +1,116 @@
+---
+title: "Exploration of Mountain Yellow-legged Frog (Rana muscosa) Counts in Southern Sierra Nevada Waterbodies"
+author: "Renee LaManna"
+date: "1/14/2022"
+output: html_document
+---
+
+## Setup
+
+```{r setup, include=TRUE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
+
+# Attach necessary pkgs and set code chunk options
+library(tidyverse)
+library(janitor)
+library(here)
+library(lubridate)
+library(ggplot2)
+library(patchwork)
+```
+
+## Read in the data  
+
+```{r}
+# Read in the data `sierra_amphibians.csv` as `amphibians` using read_csv() and here() pkgs
+amphibians <- read_csv(here("data", "sierra_amphibians.csv"))
+```
+
+## Initial data wrangling
+- Create new df, `ramu_amp` from `amphibians`
+- Filter to only include the species `RAMU`
+- Convert `survey_date` to class date using lubridate pkg and then create a column with just the year
+- Filter to only include: `SubAdult`, `Tadpole`, and `Adult` lifestages
+- Select only necessary columns and rename as needed 
+```{r}
+ramu_amp <- amphibians %>%
+  filter(amphibian_species == "RAMU") %>% 
+  mutate(date = mdy(survey_date)) %>% 
+  mutate(year = year(date)) %>% 
+  filter(amphibian_life_stage %in% c("SubAdult", "Tadpole", "Adult")) %>% 
+  select("amphibian_species", "lake_id", "year", "amphibian_life_stage") %>% 
+  rename(life_stage = amphibian_life_stage) 
+
+```
+
+## Data wrangling: 1st figure
+- Create a new df, ramu_amp_1 that will be used for for the 1st figure
+- Group by year and life stage, then summarise to get counts
+```{r}
+ramu_amp_1 <- ramu_amp %>% 
+  group_by(year, life_stage) %>% 
+  summarise(count=n())
+```
+
+## Data visualization: 1st figure
+- Use ggplot to create a column graph and store as `p1` to make finalized compound graph later
+- Adjust aesthetics as needed, use labs() to rename axis, set x-acis using scale_x_continuous()
+```{r}
+p1 <- ggplot(data = ramu_amp_1, aes(x = year, y = count)) + 
+  geom_col(aes(fill = life_stage)) +
+  theme_minimal() +
+  theme(legend.background = element_rect(fill = "grey92", color = "snow2")) +
+  scale_fill_manual(values = c("palegoldenrod", "palegreen4", "lightskyblue2")) + 
+  labs(x = "Year", y = "Count", fill = "Life Stage")  +
+  scale_x_continuous(breaks = c(1995, 1996, 1997, 2000, 2001, 2002))
+  
+```
+
+## Data wrangling: 2nd figure
+- Create a new df, `ramu_amp_2` for 2nd figure
+- Filter to only include Adult and Subadult life stages
+- Group by lake_id & summarise by count, then use slice_max() and order_by() to get the top 8 lakes w/ highest count 
+- Rename lake_id, so they look more like a name, rather than a numerical value & then order them by descending order
+
+```{r}
+ramu_amp_2 <- ramu_amp %>% 
+  filter(life_stage %in% c("Adult", "SubAdult")) %>% 
+  group_by(lake_id) %>% 
+  summarise(count = n()) %>% 
+  slice_max(order_by = count, n=8) %>% 
+  mutate(lake_id = case_when(
+   lake_id == "50183" ~ "#50183",
+   lake_id == "70583" ~ "#70583",
+   lake_id == "10226" ~ "#10226",
+   lake_id == "41322" ~ "#41322",
+   lake_id == "50219" ~ "#50219",
+   lake_id == "10101" ~ "#10101",
+   lake_id == "11192" ~ "#11192",
+   lake_id == "11332" ~ "#11332"
+  )) %>% 
+  mutate(lake_id = fct_reorder(lake_id, desc(count)))
+```
+
+## Data visualization: 2nd figure
+- Use ggplot to create a column graph and store as `p2` to use later in finalized compound graph
+- Adjust aesthetics and use labs() to rename axis
+```{r}
+p2 <- ggplot(data = ramu_amp_2, aes(x=count, y=lake_id)) + 
+  geom_col(fill = "aquamarine4", alpha = 0.8 ) +
+  theme_minimal() +
+  labs(x = "Count", y = "Lake Identification")
+  
+```
+
+## Finalized compound figure
+```{r}
+(p1 / p2) +
+  plot_annotation(tag_levels = c('A'))
+  
+```
+
+**Figure 1.** Total mountain yellow-legged frog (*Rana muscosa*) count each year across all water bodies in the southern Sierra Nevada categorized by life stages: Adult, SubAdult, and Tadpole displayed in **A.** Top 8 lakes in southern Sierra Nevada with the highest counts of Adult and SubAdult mountain yellow-legged frog (*Rana muscosa*) displayed in **B.** Knapp et al. (2020).
+
+
+**Data citation:** Knapp, R.A., C. Pavelka, E.E. Hegeman, and T.C. Smith. 2020. The Sierra Lakes Inventory Project: Non-Native fish and community composition of lakes and ponds in the Sierra Nevada, California ver 2. Environmental Data Initiative. https://doi.org/10.6073/pasta/d835832d7fd00d9e4466e44eea87fab3
+
