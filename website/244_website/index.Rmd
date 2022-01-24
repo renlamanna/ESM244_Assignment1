@@ -1,0 +1,16 @@
+---
+title: "Renee LaManna"
+image: "renee.jpg"
+links:
+  - label: LinkedIn
+    url: "https://www.linkedin.com/in/renee-lamanna"
+  - label: GitHub
+    url: "https://github.com/renlamanna"
+  - label: Email
+    url: "mailto:reneelamanna@ucsb.edu"
+output:
+  postcards::trestles
+site: distill::distill_website
+---
+ 
+I am Master's student at the Bren School of Environmental Science and Management. I am specializing in Coastal Marine Resource Management and am eager to build a career in which I can create sustainable coastal communities that are resilient to climate change. I am especially interested in coastal resilience in the face of climate change in severely at risk communities, such as island nations. Aside from that, I spend my free time with other people's doggos because I am not yet mature enough for my own. 

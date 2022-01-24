@@ -1,0 +1,189 @@
+---
+title: "Relationship between O2 Saturation and Different Physical and Chemical Variables"
+author: "Renee LaManna"
+date: "1/15/2022"
+output: html_document
+---
+
+## Overview
+This code explores the relationship between O2 saturation of seawater of California's coast and multiple physical and chemical variables. The data was collected by CalCOFI cruises. Two different linear models are created, both with the dependent variable being O2 saturation. The first linear model exploratory variables include: temperature, salinity, and phosphate. The second linear model exploratory variables include: temperature, salinity, phosphate concentration, and depth. Both corrected AIC (AICc) is performed and K-fold validation to determine which is the best fit model. In both cases, it was determined that model 2 is "best" and that the given exploratory variables better predict O2 saturation compared to model 1. 
+
+**Data citation:** CalCOFI data are available for use without restriction. Data downloaded from https://calcofi.org/ccdata.html.  Accessed 1/10/2022.
+
+
+## Setup
+
+```{r setup, include=TRUE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
+
+# Attach necessary pkgs and set code chunk options
+library(tidyverse)
+library(here)
+library(AICcmodavg)
+library(kableExtra)
+library(stargazer)
+library(modelsummary)
+```
+
+## Read in the data
+
+```{r}
+# read in `calcofi_seawater_samples.csv` and store as `h2o_samples` using read_csv() and here() pkgs
+h2o_samples <-  read_csv(here("data", "calcofi_seawater_samples.csv"))
+```
+## Wrangle data
+
+```{r}
+# Just some renaming to make the rest of the code easier
+h2o_clean <- h2o_samples %>% 
+  rename(c(temp_c = t_deg_c, 
+           phosphate = po4u_m))
+```
+
+
+## Linear models
+
+```{r}
+f1 <- o2sat ~ temp_c + salinity + phosphate
+mdl1 <- lm(f1, data = h2o_clean)
+
+f2 <- o2sat ~ temp_c + salinity + phosphate + depth_m
+mdl2 <- lm(f2, data = h2o_clean)
+```
+
+## Comparison: AICc
+
+```{r }
+# use AICcmodavg to compare AICc values between mdl1 and mdl2
+aic_table <- aictab(list(mdl1, mdl2))
+
+kable(aic_table,
+      col.names = c("Model names", "K", "AICc", "Delta AICc", "ModelLik", "AICcWt", "LL", "Cum.Wt"),
+      caption = "Table 1: Corrected AIC (AICc) results for Model 1 and Model 2. Model 1: o2sat ~ temp_c + salinity + phosphate and Model 2: o2sat ~ temp_c + salinity + phosphate + depth_m. Highlighted in grey is the AICc values per model" , 
+      digit = 2) %>% 
+      kable_styling(full_width = FALSE,
+                bootstrap_options = "bordered",
+                position = "left") %>% 
+  column_spec(4, background = 'lightgrey') 
+  
+   
+``` 
+
+## Ten-fold cross validation 
+### a. Prepare
+```{r}
+folds <- 10
+fold_vec <- rep(1:folds, length.out = nrow(h2o_clean))
+
+# set seed 
+set.seed(13)
+
+h2o_fold <- h2o_clean %>% 
+  mutate(group = sample(fold_vec, size = n(), replace = FALSE))
+
+# first fold
+test_df <- h2o_fold %>% 
+  filter(group == 1 )
+train_df <- h2o_fold %>% 
+  filter(group != 1)
+```
+
+### b. Create fxn: root-mean-square error
+
+```{r root mean square error function}
+calc_rmse <- function(x,y) {
+  rmse_result <- (x-y)^2 %>% mean() %>% sqrt()
+  return(rmse_result)
+}
+```
+
+### c. Used the training dataset to create two linear regression models based on the ones I created above
+
+```{r}
+training_mdl1 <- lm(f1, data = train_df)
+training_mdl2 <- lm(f2, data = train_df)
+```
+
+### d. Use trained models from above to predict test data
+
+```{r}
+predict_test <- test_df %>% 
+  mutate(model1 = predict(training_mdl1, test_df),
+         model2 = predict(training_mdl2, test_df))
+
+rmse_predict_test <- predict_test %>% 
+  summarize(rmse_mdl1 = calc_rmse(model1, o2sat),
+            rmse_mdl2 = calc_rmse(model2, o2sat))
+rmse_predict_test
+
+```
+
+### e. Calculating over all folds and taking average
+
+```{r}
+rmse_df <- data.frame()
+
+for(i in 1:folds) {
+  kfold_test_df <- h2o_fold %>% 
+    filter(group == i)
+  kfold_train_df <- h2o_fold %>% 
+    filter(group !=i)
+  
+  kfold_mdl1 <- lm(f1, data = kfold_train_df)
+  kfold_mdl2 <- lm(f2, data = kfold_train_df)
+  
+  kfold_pred_df <- kfold_test_df %>% 
+    mutate(mdl1 = predict(kfold_mdl1, kfold_test_df),
+           mdl2 = predict(kfold_mdl2, kfold_test_df))
+ 
+   kfold_rmse <- kfold_pred_df %>% 
+    summarize(rmse_mdl1 = calc_rmse(mdl1, o2sat),
+              rmse_mdl2 = calc_rmse(mdl2, o2sat))
+
+# Store this result by combining it with rmse_df
+
+rmse_df <- bind_rows(rmse_df,kfold_rmse)
+}
+```
+
+``` {r}
+rmse_df_mean <- rmse_df %>% 
+  summarize(mean_rmse_mdl1 = mean(rmse_mdl1),
+            mean_rmse_mdl2 = mean(rmse_mdl2))
+
+# Create table using kableExtra pkg and adjust aesthetics using kable_styling
+kable(rmse_df_mean,
+      col.names = c("Mean RMSE (Model 1)", "Mean RMSE (Model 2)"),
+      caption = "Table 2: Mean RMSE values for Model 1 and Model 2. Model 1: o2sat ~ temp_c + salinity + phosphate and Model 2: o2sat ~ temp_c + salinity + phosphate + depth_m. Highlighted in grey is the AICc values per model" , 
+      digit = 2) %>% 
+      kable_styling(full_width = FALSE,
+                bootstrap_options = "bordered",
+                position = "left") 
+```
+
+
+## Final Model
+
+```{r stargazer, results = 'asis'}
+final_mdl <- lm(f2, data = h2o_clean)
+
+lm2_glance <- glance(final_mdl)
+
+stargazer(final_mdl, 
+                     type = "html", 
+                     title = "Table 3. Model 2 results from linear regression with dependent variable being O2 saturation (%) and explanatory variables being the following: temperature (C), salinity, phosphate concentration (μmol/L), and depth (m)",
+                     dep.var.labels=c("O2 Saturation (%)"),
+                     covariate.labels=c("Temperature (C)","Salinity", "Phosphate concentration (μmol/L)","Depth (m)"))
+
+```
+
+## Final equations
+
+`r equatiomatic::extract_eq(final_mdl, wrap = TRUE)`
+
+`r equatiomatic::extract_eq(final_mdl, wrap = TRUE, use_coefs = TRUE)`
+
+
+## Conclusion
+
+The AIC value of Model 2 (`r aic_table$AICc[1]`) is lower than that of Model 1 (`r aic_table$AICc[2]`). This provides evidence that Model 2 is the better fit model (exploratory variables can better explain O2 saturation). The K-fold validation indicates that the mean error of Model 2 (`r rmse_df_mean$mean_rmse_mdl2`) is lower than that of Model 1 (`r rmse_df_mean$mean_rmse_mdl1`). The *adjusted* R^2^ value of Model 2 is `r lm2_glance$adj.r.squared` which means that `r 100*round(lm2_glance$adj.r.squared,3)`% of the variance in % O2 saturation is explained by the given explanatory variables.  Given this analysis, Model 2 is the superior model and the exploratory variables of temperature, salinity, phosphate concentration, and depth better explain O2 saturation compared to Model 1. 
